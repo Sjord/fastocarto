@@ -1,0 +1,3 @@
+[submodule "tree-sitter-cartocss"]
+	path = tree-sitter-cartocss
+	url = ../tree-sitter-cartocss
