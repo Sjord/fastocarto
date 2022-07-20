@@ -1,3 +1,3 @@
-from fastocarto.parse import main
+from fastocarto.main import main
 
 main()
