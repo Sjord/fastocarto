@@ -59,6 +59,11 @@ def convert_node_by_type(node):
     return func(node)
 
 
+class selector_base:
+    def applies_to_layer(self, layer_id):
+        return None
+
+
 class _identifier_wrapper:
     def __init__(self, node):
         self.identifier = identifier(select_child(node, "identifier"))
@@ -106,6 +111,9 @@ class ruleset(ast_node):
             ruleset(n) for n in select_children(node, "ruleset_body", "ruleset")
         ]
 
+    def __repr__(self):
+        return f"ruleset[{self.selectors}]"
+
 
 class color(ast_node):
     def __init__(self, node):
@@ -148,8 +156,9 @@ class Map(ast_node):
         pass
 
 
-class layer(ast_node, _identifier_wrapper):
-    pass
+class layer(ast_node, selector_base, _identifier_wrapper):
+    def applies_to_layer(self, layer_id):
+        return self.identifier == layer_id
 
 
 class variable(ast_node, _identifier_wrapper):
@@ -168,30 +177,54 @@ def identifier(node):
     return node.text.decode("utf-8")
 
 
-def selector(node):
-    return [convert_node_by_type(n) for n in node.children]
+class selector:
+    def __init__(self, node):
+        # This object represents a compound selector, which is made up of multiple simple selectors.
+        if node is None:
+            self.selectors = []
+        else:
+            self.selectors = [convert_node_by_type(n) for n in node.children]
+
+    def __add__(self, other):
+        result = selector(None)
+        result.selectors = self.selectors + other.selectors
+        return result
+
+    def applies_to_layer(self, layer_id):
+        for part in self.selectors:
+            applies = part.applies_to_layer(layer_id)
+            if applies is not None:
+                return applies
+        assert False, self
+
+    def __repr__(self):
+        return repr(self.selectors)
 
 
-class filter(ast_node):
+class filter(ast_node, selector_base):
     def __init__(self, node):
         pass  # TODO
 
 
-class attachment(ast_node, _identifier_wrapper):
+class attachment(ast_node, selector_base, _identifier_wrapper):
     pass
 
 
-class class_(ast_node, _identifier_wrapper):
+class class_(ast_node, selector_base, _identifier_wrapper):
     pass
 
 
 class declaration(ast_node):
     def __init__(self, node):
         # self.instance = select_child(node, "instance") # TODO
-        self.property = select_child(node, "property")
+        property_node = select_child(node, "property")
+        self.property = property_node.text.decode("utf-8")
         self.values = [
             convert_child_by_type(n) for n in select_children(node, "values", "value")
         ]
+
+    def __repr__(self):
+        return f"declaration {self.property}={self.values}"
 
 
 class url(ast_node):
