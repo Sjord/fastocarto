@@ -1,13 +1,15 @@
 from collections import defaultdict
 import sys
 from keyword import iskeyword
+from typing import List, Set, Dict, Tuple, Optional
+from tree_sitter import Node
 
 
 class ast_node:
     pass
 
 
-def get_single_child(node):
+def get_single_child(node) -> Node:
     try:
         (child,) = node.children
     except ValueError:
@@ -17,7 +19,7 @@ def get_single_child(node):
     return child
 
 
-def select_child(node, *types):
+def select_child(node: Node, *types) -> Node:
     children = select_children(node, *types)
     try:
         (child,) = children
@@ -25,10 +27,11 @@ def select_child(node, *types):
         raise ValueError(
             f"Expected one child of type {types} in {node}, but got {children}"
         )
+    print(type(child))
     return child
 
 
-def select_children(node, *types):
+def select_children(node: Node, *types) -> List[Node]:
     if len(types) == 1:
         return [child for child in node.children if child.type == types[0]]
     else:
@@ -38,19 +41,19 @@ def select_children(node, *types):
         return result
 
 
-def children_by_type(node):
+def children_by_type(node: Node) -> Dict[str, List[Node]]:
     result = defaultdict(list)
     for child in node.children:
         result[child.type].append(child)
     return result
 
 
-def convert_child_by_type(node):
+def convert_child_by_type(node: Node) -> ast_node:
     child = get_single_child(node)
     return convert_node_by_type(child)
 
 
-def convert_node_by_type(node):
+def convert_node_by_type(node: Node) -> ast_node:
     type = node.type
     if iskeyword(type):
         type += "_"
@@ -58,11 +61,14 @@ def convert_node_by_type(node):
     func = getattr(sys.modules[__name__], type)
     return func(node)
 
-
 class selector_base:
-    def applies_to_layer(self, layer_id):
+    def applies_to_layer(self, layer_id: str) -> Optional[bool]:
         return None
 
+def convert_selector_by_type(node: Node) -> selector_base:
+    converted = convert_node_by_type(node)
+    assert isinstance(converted, selector_base)
+    return converted
 
 class _identifier_wrapper:
     def __init__(self, node):
@@ -89,7 +95,7 @@ class source_file(ast_node):
 
 
 class assignment(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         self.variable = identifier(select_child(node, "variable", "identifier"))
         self.values = [
             convert_child_by_type(n) for n in select_children(node, "values", "value")
@@ -97,7 +103,7 @@ class assignment(ast_node):
 
 
 class ruleset(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         self.selectors = [
             selector(n) for n in select_children(node, "selectors", "selector")
         ]
@@ -116,18 +122,18 @@ class ruleset(ast_node):
 
 
 class color(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         child = get_single_child(node)
         self.value = child.text.decode("utf-8")
 
 
 class expression(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         pass  # TODO
 
 
 class function(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         self.identifier = identifier(select_child(node, "identifier"))
         self.parameters = [
             convert_child_by_type(n) for n in select_children(node, "values", "value")
@@ -135,29 +141,29 @@ class function(ast_node):
 
 
 class string_expr(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         self.values = [convert_node_by_type(n) for n in node.children if n.type != "+"]
 
 
-def boolean(node):
+def boolean(node: Node) -> bool:
     return bool(node.text)
 
 
-def string(node):
+def string(node: Node) -> str:
     return node.children[1].text.decode("utf-8")
 
 
-def percentage(node):
+def percentage(node: Node) -> float:
     return int(node.children[0].text) / 100
 
 
 class Map(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         pass
 
 
 class layer(ast_node, selector_base, _identifier_wrapper):
-    def applies_to_layer(self, layer_id):
+    def applies_to_layer(self, layer_id) -> Optional[bool]:
         return self.identifier == layer_id
 
 
@@ -173,24 +179,24 @@ class field(ast_node, _identifier_wrapper):
     pass
 
 
-def identifier(node):
+def identifier(node: Node) -> str:
     return node.text.decode("utf-8")
 
 
 class selector:
-    def __init__(self, node):
+    def __init__(self, node: Optional[Node]):
         # This object represents a compound selector, which is made up of multiple simple selectors.
         if node is None:
-            self.selectors = []
+            self.selectors: List[selector_base] = []
         else:
-            self.selectors = [convert_node_by_type(n) for n in node.children]
+            self.selectors = [convert_selector_by_type(n) for n in node.children]
 
     def __add__(self, other):
         result = selector(None)
         result.selectors = self.selectors + other.selectors
         return result
 
-    def applies_to_layer(self, layer_id):
+    def applies_to_layer(self, layer_id) -> bool:
         for part in self.selectors:
             applies = part.applies_to_layer(layer_id)
             if applies is not None:
@@ -215,7 +221,7 @@ class class_(ast_node, selector_base, _identifier_wrapper):
 
 
 class declaration(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         # self.instance = select_child(node, "instance") # TODO
         property_node = select_child(node, "property")
         self.property = property_node.text.decode("utf-8")
@@ -223,10 +229,10 @@ class declaration(ast_node):
             convert_child_by_type(n) for n in select_children(node, "values", "value")
         ]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"declaration {self.property}={self.values}"
 
 
 class url(ast_node):
-    def __init__(self, node):
+    def __init__(self, node: Node):
         pass  # TODO

@@ -1,6 +1,7 @@
 from pprint import pprint
 from fastocarto.output import Style, Layer, Rule
 import fastocarto.ast as ast
+from typing import List
 
 
 class FlatRuleset:
@@ -12,11 +13,11 @@ class FlatRuleset:
     def __repr__(self):
         return f"FlatRuleset[{self.selector}]{self.declarations}"
 
-    def applies_to_layer(self, layer_id):
+    def applies_to_layer(self, layer_id: str) -> bool:
         return self.selector.applies_to_layer(layer_id)
 
 
-def flatten_rulesets(rulesets, parent_selector=ast.selector(None)):
+def flatten_rulesets(rulesets, parent_selector=ast.selector(None)) -> List[FlatRuleset]:
     """
     a[foo=3] {
         [bar=5] {
@@ -46,21 +47,18 @@ def flatten_rulesets(rulesets, parent_selector=ast.selector(None)):
     return result
 
 
-def flatten_stylesheets(stylesheets):
+def flatten_stylesheets(stylesheets) -> List[FlatRuleset]:
     result = []
     for stylesheet in stylesheets:
         result.extend(flatten_rulesets(stylesheet.rulesets))
     return result
 
 
-def rules_for_layer(stylesheets, layer_id):
+def rules_for_layer(stylesheets, layer_id) -> List[Rule]:
     # TODO use all stylesheets, filter on layer (and zoom level?) and flatten, and convert to mapnik rule with symbolizers
     flattened = flatten_stylesheets(stylesheets)
-    a = [r for r in flattened if r.applies_to_layer(layer_id)]
-
-    rule = Rule()
-    pprint(flattened)
-    return []
+    flat_applicable = [r for r in flattened if r.applies_to_layer(layer_id)]
+    return flat_applicable
 
 
 def carto_to_mapnik(carto_model):

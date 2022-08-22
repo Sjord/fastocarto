@@ -1,0 +1,9 @@
+[project]
+name = "fastocarto"
+version = "0.0.1"
+dependencies = [
+    "PyYAML",
+    "tree-sitter",
+    "lxml",
+]
+
