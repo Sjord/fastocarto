@@ -27,7 +27,6 @@ def select_child(node: Node, *types) -> Node:
         raise ValueError(
             f"Expected one child of type {types} in {node}, but got {children}"
         )
-    print(type(child))
     return child
 
 
@@ -61,14 +60,21 @@ def convert_node_by_type(node: Node) -> ast_node:
     func = getattr(sys.modules[__name__], type)
     return func(node)
 
+
 class selector_base:
     def applies_to_layer(self, layer_id: str) -> Optional[bool]:
         return None
+
+    @property
+    def zoom_level_range(self):
+        return (None, None)
+
 
 def convert_selector_by_type(node: Node) -> selector_base:
     converted = convert_node_by_type(node)
     assert isinstance(converted, selector_base)
     return converted
+
 
 class _identifier_wrapper:
     def __init__(self, node):
@@ -79,8 +85,7 @@ class _identifier_wrapper:
 
 
 class source_file(ast_node):
-    def __init__(self, node, filename):
-        self.filename = filename
+    def __init__(self, node):
         self.assignments = []
         self.rulesets = []
 
@@ -89,9 +94,6 @@ class source_file(ast_node):
             children = children_by_type(statement)
             self.assignments += [assignment(n) for n in children["assignment"]]
             self.rulesets += [ruleset(n) for n in children["ruleset"]]
-
-    def __repr__(self):
-        return f"source_file({self.filename})"
 
 
 class assignment(ast_node):
@@ -179,6 +181,15 @@ class field(ast_node, _identifier_wrapper):
     pass
 
 
+class comparison(ast_node):
+    def __init__(self, node):
+        self.operator = node.text.decode("utf-8")
+
+
+def number(node):
+    return float(node.text.decode("utf-8"))
+
+
 def identifier(node: Node) -> str:
     return node.text.decode("utf-8")
 
@@ -203,13 +214,47 @@ class selector:
                 return applies
         assert False, self
 
+    @property
+    def zoom_level_range(self):
+        min = None
+        max = None
+        for s in self.selectors:
+            smin, smax = s.zoom_level_range
+            if min is None or (smin is not None and smin > min):
+                min = smin
+            if max is None or (smax is not None and smax < max):
+                max = smax
+        return (min, max)
+
     def __repr__(self):
         return repr(self.selectors)
 
 
 class filter(ast_node, selector_base):
     def __init__(self, node):
-        pass  # TODO
+        self.left = convert_node_by_type(node.child_by_field_name("left"))
+        self.comparison = comparison(node.child_by_field_name("comparison"))
+        self.right = convert_node_by_type(node.child_by_field_name("right"))
+
+    @property
+    def is_zoom_filter(self):
+        return self.left == "zoom"
+
+    @property
+    def zoom_level_range(self):
+        """
+        [zoom >= 5] -> (5, None)
+        """
+        if not self.is_zoom_filter:
+            return (None, None)
+        right = int(self.right)
+        return {
+            ">": (right + 1, None),
+            ">=": (right, None),
+            "<": (None, right - 1),
+            "<=": (None, right),
+            "=": (right, right),
+        }[self.comparison.operator]
 
 
 class attachment(ast_node, selector_base, _identifier_wrapper):
